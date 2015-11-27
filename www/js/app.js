@@ -14,7 +14,7 @@ angular.module('starter', [
   'angular-jwt'
 ])
 
-.run(function($ionicPlatform) {
+.run(function($ionicPlatform, $rootScope, auth, store, jwtHelper, $location) {
   $ionicPlatform.ready(function() {
     // Hide the accessory bar by default (remove this to show the accessory bar above the keyboard
     // for form inputs)
@@ -27,6 +27,37 @@ angular.module('starter', [
       // org.apache.cordova.statusbar required
       StatusBar.styleDefault();
     }
+    
+     //This hooks all auth avents
+    auth.hookEvents();
+    //This event gets triggered on URL change
+    var refreshingToken = null;
+    $rootScope.$on('$locationChangeStart', function() {
+      var token = store.get('token');
+      var refreshToken = store.get('refreshToken');
+      if (token) {
+        if (!jwtHelper.isTokenExpired(token)) {
+          if (!auth.isAuthenticated) {
+            auth.authenticate(store.get('profile'), token);
+          }
+        } else {
+          if (refreshToken) {
+            if (refreshingToken === null) {
+              refreshingToken = auth.refreshIdToken(refreshToken).then(function(idToken) {
+                store.set('token', idToken);
+                auth.authenticate(store.get('profile'), idToken);
+              }).finally(function() {
+                refreshingToken = null;
+              });
+            }
+            return refreshingToken;
+          } else {
+            $location.path('/login');// Notice: this url must be the one defined 
+          }                          // in your login state. Refer to step 5.
+        }
+      }
+    });
+    
   });
 })
 
@@ -102,6 +133,29 @@ angular.module('starter', [
   authProvider.init({
     domain: 'nioto.auth0.com',
     clientID: 'Nx5bloFRrR1QR4iSI5wGB2i31JRaExtE',
-    loginState: 'login' // This is the name of the state where you'll show the login, which is defined above...
+    loginState: 'login', // This is the name of the state where you'll show the login, which is defined above...
+    forceJSONP:  false
   });
+  
+  
+    jwtInterceptorProvider.tokenGetter = function(store, jwtHelper, auth) {
+    var idToken = store.get('token');
+    var refreshToken = store.get('refreshToken');
+    // If no token return null
+    if (!idToken || !refreshToken) {
+      return null;
+    }
+    // If token is expired, get a new one
+    if (jwtHelper.isTokenExpired(idToken)) {
+      return auth.refreshIdToken(refreshToken).then(function(idToken) {
+        store.set('token', idToken);
+        return idToken;
+      });
+    } else {
+      return idToken;
+    }
+  }
+
+  $httpProvider.interceptors.push('jwtInterceptor');
+  
 });
